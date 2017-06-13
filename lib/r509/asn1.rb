@@ -40,6 +40,9 @@ module R509
           when R509::Subject, Array
             subject = R509::Subject.new(domain)
             general_names.create_item(:tag => 4, :value => subject)
+          when /\AotherName:/
+            other_name = R509::OtherName.new(domain)
+            general_names.create_item(:tag => 0, :value => other_name)
           when /:\/\// # URI
             general_names.create_item(:tag => 6, :value => domain.strip)
           when /@/ # rfc822Name
@@ -113,7 +116,7 @@ module R509
         #        iPAddress                       [7]     OCTET STRING,
         #        registeredID                    [8]     OBJECT IDENTIFIER }
         case type
-        when "otherName", :otherName then 0
+        when "otherName", :otherName, "other" then 0
         when "rfc822Name", :rfc822Name, "email" then 1
         when "dNSName", :dNSName, "DNS" then 2
         when "x400Address", :x400Address then 3
@@ -129,6 +132,7 @@ module R509
       # @return [String] serial prefix
       def self.map_tag_to_short_type(tag)
         case tag
+        when 0 then "other"
         when 1 then "email"
         when 2 then "DNS"
         when 4 then "dirName"
@@ -159,7 +163,11 @@ module R509
 
       # @return [Hash]
       def to_h
-        val = (@value.is_a?(R509::Subject)) ? @value.to_h : @value
+        val = case @value
+              when R509::Subject then @value.to_h
+              when R509::OtherName then @value.to_s
+              else @value
+              end
 
         { :type => @short_type, :value => val }
       end
@@ -195,7 +203,11 @@ module R509
         @tag = asn[:tag] || R509::ASN1::GeneralName.map_type_to_tag(asn[:type])
         @type = R509::ASN1::GeneralName.map_tag_to_type(@tag)
         @short_type = R509::ASN1::GeneralName.map_tag_to_short_type(@tag)
-        @value = (@tag == 4) ? R509::Subject.new(asn[:value]) : asn[:value]
+        @value = case @tag
+        when 0 then R509::OtherName.new(asn[:value])
+        when 4 then R509::Subject.new(asn[:value])
+        else asn[:value]
+        end
       end
 
       def parse_asn(asn)
@@ -204,6 +216,12 @@ module R509
         @short_type = R509::ASN1::GeneralName.map_tag_to_short_type(@tag)
         value = asn.value
         case @tag
+        when 0
+          if value.size > 2
+            @value = R509::OtherName.new([value.first.oid, OpenSSL::ASN1::Sequence.new(value[1..-1])])
+          else
+            @value = R509::OtherName.new([value.first.oid, value[1]])
+          end
         when 1, 2, 6 then @value = value
         when 4 then @value = R509::Subject.new(value.first.to_der)
         when 7
@@ -333,6 +351,11 @@ module R509
         @types[:directoryName]
       end
       alias_method :dir_names, :directory_names
+
+      # @return [Array] Array of other names
+      def other_names
+        @types[:otherName]
+      end
 
       # @return [Array] string of serialized names for OpenSSL extension creation
       def serialize_names

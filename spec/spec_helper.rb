@@ -25,3 +25,9 @@ end
 RSpec.configure do |config|
   config.alias_it_should_behave_like_to :it_validates, "it validates"
 end
+
+RSpec::Matchers.define :der_eq do |expected|
+  match do |actual|
+    actual.to_der == expected.to_der
+  end
+end

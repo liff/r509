@@ -45,6 +45,13 @@ describe R509::ASN1 do
       expect(general_names.rfc_822_names).to eq(['email@domain.com', 'some@other.com'])
     end
 
+    it "adds SAN other names" do
+      general_names = R509::ASN1.general_name_parser(['otherName:1.3.6.1.4.1.311.20.2.3;UTF8:username@some.domain'])
+      other_name = R509::OtherName.new(['1.3.6.1.4.1.311.20.2.3', OpenSSL::ASN1::UTF8String.new('username@some.domain')])
+      expect(general_names.other_names.size).to eq(1)
+      expect(general_names.other_names[0].value).to der_eq(other_name.value)
+    end
+
     it "adds directoryNames via R509::Subject objects" do
       s = R509::Subject.new([['CN', 'what-what']])
       s2 = R509::Subject.new([['C', 'US'], ['L', 'locality']])
@@ -166,7 +173,7 @@ describe R509::ASN1::GeneralName do
   end
   context ":map_tag_to_short_type" do
     it "handles otherName" do
-      expect { R509::ASN1::GeneralName.map_tag_to_short_type(0) }.to raise_error(R509::R509Error)
+      expect(R509::ASN1::GeneralName.map_tag_to_short_type(0)).to eq("other")
     end
     it "handles rfc822Name" do
       expect(R509::ASN1::GeneralName.map_tag_to_short_type(1)).to eq("email")
@@ -196,10 +203,25 @@ describe R509::ASN1::GeneralName do
 
   context "creation & building hash" do
     it "errors on unimplemented types" do
-      expect { R509::ASN1::GeneralName.new(:type => 0) }.to raise_error(R509::R509Error)
       expect { R509::ASN1::GeneralName.new(:type => 3) }.to raise_error(R509::R509Error)
       expect { R509::ASN1::GeneralName.new(:type => 5) }.to raise_error(R509::R509Error)
       expect { R509::ASN1::GeneralName.new(:type => 8) }.to raise_error(R509::R509Error)
+    end
+    context "other" do
+      before :all do
+        @args = { :type => 'other', :value => 'otherName:1.3.6.1.4.1.311.20.2.3;UTF8:username@some.domain' }
+        @gn = R509::ASN1::GeneralName.new(@args)
+      end
+
+      it "creates object" do
+        expect(@gn.type).to eq(:otherName)
+        expect(@gn.value.value.value).to eq('username@some.domain')
+        expect(@gn.tag).to eq(0)
+      end
+
+      it "builds hash" do
+        expect(@gn.to_h).to eq(@args)
+      end
     end
     context "email" do
       before :all do
@@ -387,11 +409,13 @@ describe R509::ASN1::GeneralName do
     expect(gn.type).to eq(:directoryName)
     expect(gn.value.to_s).to eq('/C=US/ST=Illinois/L=Chicago/O=Ruby CA Project/CN=Test CA')
   end
-  it "errors on unimplemented type" do
+  it "handles otherName" do
     # otherName type
     der = "\xA0\u0014\u0006\u0003*\u0003\u0004\xA0\r\u0016\vHello World"
     asn = OpenSSL::ASN1.decode der
-    expect { R509::ASN1::GeneralName.new(asn) }.to raise_error(R509::R509Error, "Unimplemented GeneralName tag: 0. At this time R509 does not support GeneralName types other than rfc822Name, dNSName, uniformResourceIdentifier, iPAddress, and directoryName")
+    gn = R509::ASN1::GeneralName.new(asn)
+    expect(gn.type).to eq(:otherName)
+    expect(gn.value.oid).to eq('1.2.3.4')
   end
 end
 
@@ -421,7 +445,7 @@ describe R509::ASN1::GeneralNames do
     expect(gns.dns_names).to eq(["www.test.local", "www.text.local"])
     expect(gns.rfc_822_names).to eq(["myemail@email.com"])
   end
-  it "errors on unimplemented type" do
+  pending "errors on unimplemented type" do
     # otherName type
     gns = R509::ASN1::GeneralNames.new
     der = "\xA0\u0014\u0006\u0003*\u0003\u0004\xA0\r\u0016\vHello World"
