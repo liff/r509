@@ -14,6 +14,9 @@ module R509
                     when OpenSSL::ASN1::Sequence
                       inner = value.value.map {|elem| to_string(elem)}.join(';')
                       "SEQ:(#{inner})"
+                    when OpenSSL::ASN1::Set
+                      inner = value.value.map {|elem| to_string(elem)}.join(';')
+                      "SET:(#{inner})"
                     else
                       "#{type_name_of(value)}:#{value.value.to_s}"
                     end
@@ -21,6 +24,30 @@ module R509
           value_str
         else
           "#{modifier},#{value_str}"
+        end
+      end
+
+      def self.to_conf(value)
+        modifier = modifier_of(value)
+        value_str, conf = case value
+                          when OpenSSL::ASN1::Sequence, OpenSSL::ASN1::Set
+                            type = value.is_a?(OpenSSL::ASN1::Sequence) ? 'SEQ' : 'SET'
+                            conf_name = OpenSSL::Random.random_bytes(16).unpack("H*")[0]
+                            conf_str = "[#{conf_name}]\n"
+                            confs = ''
+                            value.value.each_with_index do |elem, i|
+                              elem_str, elem_conf = to_conf(elem)
+                              conf_str << "elem_#{i}=#{elem_str}\n"
+                              confs << elem_conf
+                            end
+                            ["#{type}:#{conf_name}", conf_str + confs]
+                          else
+                            ["#{type_name_of(value)}:#{value.value.to_s}", '']
+                          end
+        if modifier.empty?
+          [value_str, conf]
+        else
+          ["#{modifier},#{value_str}", conf]
         end
       end
 

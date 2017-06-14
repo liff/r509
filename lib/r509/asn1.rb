@@ -139,7 +139,7 @@ module R509
         when 6 then "URI"
         when 7 then "IP"
         else
-          raise R509Error, "Unimplemented GeneralName tag: #{tag}. At this time R509 does not support GeneralName types other than rfc822Name, dNSName, uniformResourceIdentifier, iPAddress, and directoryName"
+          raise R509Error, "Unimplemented GeneralName tag: #{tag}. At this time R509 does not support GeneralName types other than otherName, rfc822Name, dNSName, uniformResourceIdentifier, iPAddress, and directoryName"
         end
       end
 
@@ -191,6 +191,8 @@ module R509
       def serialize_name
         if self.type == :directoryName
           return serialize_directory_name
+        elsif self.type == :otherName
+          return serialize_other_name
         else
           extension_string = self.short_type + ":" + self.value
           return { :conf => nil, :extension_string => extension_string }
@@ -256,6 +258,12 @@ module R509
         extension_string = self.short_type + ":" + conf_name
         { :conf => conf, :extension_string => extension_string }
       end
+
+      def serialize_other_name
+        root, conf_value = R509::ASN1::Generate.to_conf(@value.value)
+        extension_string = "otherName:#{@value.oid};#{root}"
+        {:conf => conf_value == '' ? nil : conf_value, :extension_string => extension_string}
+      end
     end
 
     # object to hold parsed sequences of generalnames
@@ -268,7 +276,7 @@ module R509
       # @param data [Array,R509::ASN1::GeneralNames] Pass an array of hashes to create R509::ASN1::GeneralName objects or an existing R509::ASN1::GeneralNames object
       def initialize(data = nil)
         @types = {
-          :otherName => [], # unimplemented
+          :otherName => [],
           :rfc822Name => [],
           :dNSName => [],
           :x400Address => [], # unimplemented
